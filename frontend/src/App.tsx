@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { OceanGlobe } from './components/OceanGlobe';
 import { DepthSlider } from './components/DepthSlider';
 import { TimeSlider } from './components/TimeSlider';
@@ -12,6 +12,7 @@ import {
   type ArgoFloat,
   OCEAN_VARIABLES
 } from './data/mockOceanData';
+import { fetchFloats } from './services/api';
 import { Radio, AlertOctagon, Info } from 'lucide-react';
 
 
@@ -24,6 +25,21 @@ export function App() {
   const [selectedFloat, setSelectedFloat] = useState<ArgoFloat | null>(null);
   const [activePreset, setActivePreset] = useState<'general' | 'cyclone' | 'fisheries' | 'sar'>('general');
   const [isDataModalOpen, setIsDataModalOpen] = useState<boolean>(false);
+  const [argoFloats, setArgoFloats] = useState<ArgoFloat[]>(MOCK_ARGO_FLOATS);
+
+  // Fetch live Argo floats from backend on mount
+  useEffect(() => {
+    fetchFloats()
+      .then((res) => {
+        if (res.data && res.data.length > 0) {
+          setArgoFloats(res.data as ArgoFloat[]);
+        }
+      })
+      .catch(() => {
+        // Fall back to mock data if backend is unavailable
+        setArgoFloats(MOCK_ARGO_FLOATS);
+      });
+  }, []);
 
 
   // Apply quick operational presets
@@ -64,7 +80,7 @@ export function App() {
           timeIndex={timeIndex}
           selectedFloat={selectedFloat}
           onSelectFloat={(f) => setSelectedFloat(f)}
-          floats={MOCK_ARGO_FLOATS}
+          floats={argoFloats}
           showCurrentVectors={showCurrentVectors}
           verticalExaggeration={verticalExaggeration}
           palette={OCEAN_VARIABLES[variable]?.palette || []}
@@ -88,13 +104,13 @@ export function App() {
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
                 <Radio className="w-4 h-4 animate-pulse text-emerald-400" />
-                <span>Live In-Situ Network ({MOCK_ARGO_FLOATS.length})</span>
+                <span>Live In-Situ Network ({argoFloats.length})</span>
               </div>
               <span className="text-[10px] text-slate-400 font-mono">INCOIS Live Feed</span>
             </div>
 
             <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-              {MOCK_ARGO_FLOATS.map((f) => {
+              {argoFloats.map((f) => {
                 const isSel = selectedFloat?.id === f.id;
                 return (
                   <div
