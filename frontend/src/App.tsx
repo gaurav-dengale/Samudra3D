@@ -7,200 +7,278 @@ import { ColorbarLegend } from './components/ColorbarLegend';
 import { TopNavigation } from './components/TopNavigation';
 import { SensorProfileModal } from './components/SensorProfileModal';
 import { DataIngestionModal } from './components/DataIngestionModal';
+import { WakeUpOverlay } from './components/WakeUpOverlay';
+import { ToastContainer } from './components/Toast';
+import { useToast } from './hooks/useToast';
 import {
   MOCK_ARGO_FLOATS,
   type ArgoFloat,
   OCEAN_VARIABLES
 } from './data/mockOceanData';
 import { fetchFloats } from './services/api';
-import { Radio, AlertOctagon, Info } from 'lucide-react';
+import { Radio, AlertOctagon, Info, Zap } from 'lucide-react';
 
+type Platform = 'all' | 'Argo' | 'Glider' | 'CTD Mooring';
 
 export function App() {
   const [variable, setVariable] = useState<string>('sst');
   const [depth, setDepth] = useState<number>(0);
-  const [timeIndex, setTimeIndex] = useState<number>(4); // Default to "Now"
+  const [timeIndex, setTimeIndex] = useState<number>(4);
   const [verticalExaggeration, setVerticalExaggeration] = useState<number>(1);
   const [showCurrentVectors, setShowCurrentVectors] = useState<boolean>(true);
   const [selectedFloat, setSelectedFloat] = useState<ArgoFloat | null>(null);
   const [activePreset, setActivePreset] = useState<'general' | 'cyclone' | 'fisheries' | 'sar'>('general');
   const [isDataModalOpen, setIsDataModalOpen] = useState<boolean>(false);
   const [argoFloats, setArgoFloats] = useState<ArgoFloat[]>(MOCK_ARGO_FLOATS);
+  const [isBackendWaking, setIsBackendWaking] = useState(false);
+  const [platformFilter, setPlatformFilter] = useState<Platform>('all');
 
-  // Fetch live Argo floats from backend on mount
+  const { toasts, showToast, removeToast } = useToast();
+
+  // Fetch live floats from backend
   useEffect(() => {
     fetchFloats()
       .then((res) => {
         if (res.data && res.data.length > 0) {
           setArgoFloats(res.data as ArgoFloat[]);
+          showToast('success', 'Live data loaded', `${res.data.length} sensors fetched from backend`);
         }
       })
       .catch(() => {
-        // Fall back to mock data if backend is unavailable
         setArgoFloats(MOCK_ARGO_FLOATS);
       });
   }, []);
 
-
-  // Apply quick operational presets
   const handleSelectPreset = (preset: 'general' | 'cyclone' | 'fisheries' | 'sar') => {
     setActivePreset(preset);
     if (preset === 'cyclone') {
-      setVariable('ssh'); // Sea surface height / storm surge
+      setVariable('ssh');
       setDepth(0);
       setShowCurrentVectors(true);
+      showToast('warning', 'Cyclone Mode Active', 'SSH anomalies highlighted in Bay of Bengal');
     } else if (preset === 'fisheries') {
-      setVariable('chlorophyll'); // Chlorophyll fronts & SST upwelling
+      setVariable('chlorophyll');
       setDepth(25);
+      showToast('info', 'PFZ Mode Active', 'Chlorophyll-a fronts and upwelling zones highlighted');
     } else if (preset === 'sar') {
-      setVariable('currents'); // Surface currents drift
+      setVariable('currents');
       setDepth(0);
       setShowCurrentVectors(true);
+      showToast('info', 'SAR Mode Active', 'Surface current drift vectors for rescue operations');
     } else {
       setVariable('sst');
       setDepth(0);
     }
   };
 
+  const filteredFloats = platformFilter === 'all'
+    ? argoFloats
+    : argoFloats.filter((f) => f.platform === platformFilter);
+
+  const PLATFORM_TABS: { id: Platform; label: string; dot: string }[] = [
+    { id: 'all',         label: 'All',     dot: 'bg-slate-400' },
+    { id: 'Argo',        label: 'Argo',    dot: 'bg-amber-400' },
+    { id: 'Glider',      label: 'Glider',  dot: 'bg-emerald-400' },
+    { id: 'CTD Mooring', label: 'Mooring', dot: 'bg-pink-400' },
+  ];
+
   return (
     <div className="relative w-screen h-screen bg-slate-950 flex flex-col select-none overflow-hidden font-sans">
-      {/* Top SIH Header */}
+      {/* Wake-up overlay */}
+      <WakeUpOverlay isVisible={isBackendWaking} />
+
+      {/* Toast notifications */}
+      <ToastContainer toasts={toasts} onRemove={removeToast} />
+
+      {/* Top Navigation */}
       <TopNavigation
         activePreset={activePreset}
         onSelectPreset={handleSelectPreset}
         onOpenDataModal={() => setIsDataModalOpen(true)}
+        onBackendWaking={setIsBackendWaking}
       />
 
-      {/* Main 3D Viewport Area */}
-      <div className="relative flex-1 w-full h-full overflow-hidden">
-        {/* 3D WebGL Ocean Globe */}
+      {/* Main 3D Viewport */}
+      <div className="relative flex-1 w-full overflow-hidden">
         <OceanGlobe
           variable={variable}
           depth={depth}
           timeIndex={timeIndex}
           selectedFloat={selectedFloat}
           onSelectFloat={(f) => setSelectedFloat(f)}
-          floats={argoFloats}
+          floats={filteredFloats}
           showCurrentVectors={showCurrentVectors}
           verticalExaggeration={verticalExaggeration}
           palette={OCEAN_VARIABLES[variable]?.palette || []}
         />
 
-        {/* Left Floating Controls Panel: Variable Selector & Colorbar */}
-        <div className="absolute top-4 left-4 z-10 flex flex-col gap-3 max-w-[280px]">
+        {/* Left controls */}
+        <div className="absolute top-4 left-4 z-10 flex flex-col gap-2.5 max-w-[280px]">
           <VariableControl
             selectedVariable={variable}
             onSelectVariable={(v) => setVariable(v)}
             showCurrentVectors={showCurrentVectors}
             onToggleVectors={() => setShowCurrentVectors(!showCurrentVectors)}
           />
-
           <ColorbarLegend variable={variable} />
         </div>
 
-        {/* Right Floating Quick In-Situ Sensor Registry */}
-        <div className="absolute top-4 right-4 z-10 flex flex-col gap-3 max-w-[310px]">
-          <div className="bg-slate-900/85 backdrop-blur-md border border-slate-700/60 p-3.5 rounded-xl shadow-2xl text-slate-100 flex flex-col gap-2">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-1.5 text-xs font-semibold text-emerald-400">
-                <Radio className="w-4 h-4 animate-pulse text-emerald-400" />
-                <span>Live In-Situ Network ({argoFloats.length})</span>
+        {/* Right panel — sensor registry */}
+        <div className="absolute top-4 right-4 z-10 flex flex-col gap-2.5 max-w-[300px]">
+          <div className="glass-bright rounded-xl shadow-2xl text-slate-100 flex flex-col gap-0 overflow-hidden">
+            {/* Panel header */}
+            <div className="px-3.5 py-2.5 border-b border-slate-800/60 flex items-center justify-between">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-400">
+                <Radio className="w-3.5 h-3.5 animate-pulse" />
+                <span>Live In-Situ Network</span>
               </div>
-              <span className="text-[10px] text-slate-400 font-mono">INCOIS Live Feed</span>
+              <div className="flex items-center gap-1.5">
+                <span className="text-[9px] text-slate-500 mono">INCOIS</span>
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-sm" />
+              </div>
             </div>
 
-            <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-              {argoFloats.map((f) => {
+            {/* Platform filter tabs */}
+            <div className="flex border-b border-slate-800/60 bg-slate-900/40">
+              {PLATFORM_TABS.map((tab) => {
+                const count = tab.id === 'all' ? argoFloats.length : argoFloats.filter(f => f.platform === tab.id).length;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => setPlatformFilter(tab.id)}
+                    className={`flex-1 flex items-center justify-center gap-1 py-1.5 text-[10px] font-semibold transition border-b-2 ${
+                      platformFilter === tab.id
+                        ? 'border-sky-400 text-sky-300 bg-sky-500/5'
+                        : 'border-transparent text-slate-500 hover:text-slate-300'
+                    }`}
+                  >
+                    <span className={`w-1.5 h-1.5 rounded-full ${tab.dot}`} />
+                    {tab.label}
+                    <span className="text-[9px] opacity-60">({count})</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Float list */}
+            <div className="p-2 space-y-1.5 max-h-56 overflow-y-auto">
+              {filteredFloats.length === 0 ? (
+                <div className="text-center text-slate-500 text-xs py-4">No sensors for this filter</div>
+              ) : filteredFloats.map((f) => {
                 const isSel = selectedFloat?.id === f.id;
                 return (
                   <div
                     key={f.id}
                     onClick={() => setSelectedFloat(f)}
-                    className={`p-2 rounded-lg border text-xs cursor-pointer transition flex items-center justify-between ${
+                    className={`p-2.5 rounded-xl border text-xs cursor-pointer transition-all duration-150 ${
                       isSel
-                        ? 'bg-sky-950/80 border-sky-400 text-sky-200 shadow'
-                        : 'bg-slate-800/60 border-slate-700/50 text-slate-300 hover:bg-slate-700/70'
+                        ? 'bg-sky-950/60 border-sky-400/60 text-sky-200 shadow-md glow-sky'
+                        : 'bg-slate-800/40 border-slate-700/30 text-slate-300 hover:bg-slate-700/50 hover:border-slate-600/50'
                     }`}
                   >
-                    <div>
-                      <div className="font-semibold flex items-center gap-1.5">
-                        <span className={`w-2 h-2 rounded-full ${f.platform === 'Argo' ? 'bg-amber-400' : f.platform === 'Glider' ? 'bg-emerald-400' : 'bg-pink-400'}`} />
-                        {f.id}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <div className="font-semibold flex items-center gap-1.5 text-[11px]">
+                          <span className={`w-2 h-2 rounded-full shrink-0 ${
+                            f.platform === 'Argo' ? 'bg-amber-400' :
+                            f.platform === 'Glider' ? 'bg-emerald-400' : 'bg-pink-400'
+                          }`} />
+                          {f.id}
+                        </div>
+                        <div className="text-[10px] text-slate-500 mono mt-0.5">
+                          {f.lat.toFixed(1)}°N {f.lon.toFixed(1)}°E · {f.maxDepth}m
+                        </div>
                       </div>
-                      <div className="text-[10px] text-slate-400 font-mono">
-                        {f.lat}°N, {f.lon}°E • Depth: {f.maxDepth}m
+                      <div className="text-right">
+                        <div className={`text-[9px] font-bold uppercase px-1.5 py-0.5 rounded ${
+                          f.status === 'active' ? 'bg-emerald-500/20 text-emerald-400' :
+                          f.status === 'profiling' ? 'bg-sky-500/20 text-sky-400' :
+                          'bg-slate-700 text-slate-400'
+                        }`}>
+                          {f.status}
+                        </div>
+                        <div className="text-[9px] text-slate-500 mt-0.5 flex items-center gap-0.5 justify-end">
+                          <Zap className="w-2.5 h-2.5 text-amber-400" />
+                          {f.batteryPercent}%
+                        </div>
                       </div>
                     </div>
-                    <button className="text-[10px] px-2 py-1 rounded bg-sky-500/20 text-sky-300 hover:bg-sky-500/40 font-mono">
-                      View Profile
-                    </button>
                   </div>
                 );
               })}
             </div>
           </div>
 
-          {/* Active Preset Operational Advisory Card */}
+          {/* Operational advisory cards */}
           {activePreset === 'cyclone' && (
-            <div className="bg-red-950/80 backdrop-blur-md border border-red-500/60 p-3 rounded-xl text-red-200 text-xs shadow-2xl flex flex-col gap-1.5">
+            <div className="glass-bright border border-red-500/40 p-3 rounded-xl text-red-200 text-xs shadow-2xl glow-red flex flex-col gap-1.5 animate-slide-down">
               <div className="font-bold flex items-center gap-1.5 text-red-400">
-                <AlertOctagon className="w-4 h-4 text-red-400 animate-bounce" />
-                Cyclone Advisory Mode Active
+                <AlertOctagon className="w-4 h-4 animate-bounce" />
+                Cyclone Advisory Mode
               </div>
-              <p className="text-[11px] text-red-300/90 leading-relaxed">
-                Storm surge sea surface height anomalies highlighted in Bay of Bengal. Vertical mixing indicates thermocline shallowing.
+              <p className="text-[11px] text-red-300/80 leading-relaxed">
+                SSH anomalies highlighted in Bay of Bengal. Thermocline shallowing detected.
               </p>
             </div>
           )}
-
           {activePreset === 'fisheries' && (
-            <div className="bg-emerald-950/80 backdrop-blur-md border border-emerald-500/60 p-3 rounded-xl text-emerald-200 text-xs shadow-2xl flex flex-col gap-1.5">
+            <div className="glass-bright border border-emerald-500/40 p-3 rounded-xl text-emerald-200 text-xs shadow-2xl glow-emerald flex flex-col gap-1.5 animate-slide-down">
               <div className="font-bold flex items-center gap-1.5 text-emerald-400">
-                <Info className="w-4 h-4 text-emerald-400" />
-                Potential Fishing Zone (PFZ) Advisories
+                <Info className="w-4 h-4" />
+                PFZ Advisories Active
               </div>
-              <p className="text-[11px] text-emerald-300/90 leading-relaxed">
-                High chlorophyll-a front detected along South-West coast upwelling zone. Co-located with optimal 27°C thermal fronts.
+              <p className="text-[11px] text-emerald-300/80 leading-relaxed">
+                High chlorophyll-a front along SW coast upwelling zone. Optimal 27°C thermal fronts detected.
+              </p>
+            </div>
+          )}
+          {activePreset === 'sar' && (
+            <div className="glass-bright border border-amber-500/40 p-3 rounded-xl text-amber-200 text-xs shadow-2xl flex flex-col gap-1.5 animate-slide-down">
+              <div className="font-bold flex items-center gap-1.5 text-amber-400">
+                <Radio className="w-4 h-4 animate-pulse" />
+                SAR Drift Mode Active
+              </div>
+              <p className="text-[11px] text-amber-300/80 leading-relaxed">
+                Surface current drift vectors active for search & rescue trajectory estimation.
               </p>
             </div>
           )}
         </div>
 
-        {/* Bottom Floating Control Bar: Depth Slicer & 4D Time Slider */}
-        <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-10 flex items-center gap-4 max-w-[95vw]">
+        {/* Bottom controls */}
+        <div className="absolute bottom-5 left-1/2 -translate-x-1/2 z-10 flex items-end gap-3 max-w-[95vw]">
           <DepthSlider
             depth={depth}
             onChangeDepth={(d) => setDepth(d)}
             verticalExaggeration={verticalExaggeration}
             onChangeExaggeration={(v) => setVerticalExaggeration(v)}
           />
-
           <TimeSlider
             timeIndex={timeIndex}
             onChangeTime={(t) => setTimeIndex(t)}
           />
         </div>
 
-        {/* Bottom Left Quick Help / Attribution */}
-        <div className="absolute bottom-4 left-4 z-10 text-[10px] text-slate-500 font-mono flex items-center gap-2">
-          <span>Drag to Rotate</span>
-          <span>•</span>
-          <span>Scroll to Zoom</span>
-          <span>•</span>
-          <span>Click Floats for Sounding</span>
+        {/* Bottom-left hint */}
+        <div className="absolute bottom-4 left-4 z-10 text-[9px] text-slate-600 mono flex items-center gap-2">
+          <span>Drag: Rotate</span>
+          <span>·</span>
+          <span>Scroll: Zoom</span>
+          <span>·</span>
+          <span>Click sensor: Profile</span>
         </div>
       </div>
 
-      {/* Sensor In-Situ Sounding Chart Modal */}
+      {/* Modals */}
       <SensorProfileModal
         floatData={selectedFloat}
         onClose={() => setSelectedFloat(null)}
       />
-
-      {/* NetCDF & Observation Ingestion Pipeline Modal */}
       <DataIngestionModal
         isOpen={isDataModalOpen}
         onClose={() => setIsDataModalOpen(false)}
+        onSuccess={(msg) => showToast('success', 'Ingestion Complete', msg)}
+        onError={(msg) => showToast('error', 'Upload Failed', msg)}
       />
     </div>
   );

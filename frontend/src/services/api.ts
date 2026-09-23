@@ -1,5 +1,13 @@
 const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
 
+/** Ping the backend health endpoint */
+export async function checkHealth(): Promise<{ status: string; version: string; floats_count: number }> {
+  const res = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(5000) });
+  if (!res.ok) throw new Error('Backend unhealthy');
+  return res.json();
+}
+
+
 export interface ProfilePoint {
   depth: number;
   temperature: number;

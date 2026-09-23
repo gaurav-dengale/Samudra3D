@@ -161,7 +161,16 @@ def read_root():
         "system": "SAMUDRA 3D INCOIS Model & In-Situ Engine",
         "version": "1.0.0",
         "sih_ps": "26067",
-        "endpoints": ["/api/floats", "/api/model-slice", "/api/ingest/netcdf"]
+        "endpoints": ["/health", "/api/floats", "/api/model-slice", "/api/ingest/netcdf"]
+    }
+
+@app.get("/health")
+def health_check():
+    """Health check endpoint for frontend status monitoring."""
+    return {
+        "status": "ok",
+        "version": "1.0.0",
+        "floats_count": len(ACTIVE_FLOATS)
     }
 
 @app.get("/api/floats")

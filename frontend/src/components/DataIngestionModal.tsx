@@ -6,9 +6,11 @@ import { ingestNetCDF } from '../services/api';
 interface DataIngestionModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onSuccess?: (msg: string) => void;
+  onError?: (msg: string) => void;
 }
 
-export const DataIngestionModal: React.FC<DataIngestionModalProps> = ({ isOpen, onClose }) => {
+export const DataIngestionModal: React.FC<DataIngestionModalProps> = ({ isOpen, onClose, onSuccess, onError }) => {
   const [activeTab, setActiveTab] = useState<'netcdf' | 'argo' | 'ascii'>('netcdf');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadSuccess, setUploadSuccess] = useState(false);
@@ -26,6 +28,7 @@ export const DataIngestionModal: React.FC<DataIngestionModalProps> = ({ isOpen, 
       const result = await ingestNetCDF(file);
       setUploadResult({ filename: result.filename, size_kb: result.size_kb, variables_extracted: result.variables_extracted });
       setUploadSuccess(true);
+      onSuccess?.(`${result.filename} parsed · Variables: ${result.variables_extracted.join(', ')}`);
       setTimeout(() => {
         setUploadSuccess(false);
         setUploadResult(null);
@@ -33,6 +36,7 @@ export const DataIngestionModal: React.FC<DataIngestionModalProps> = ({ isOpen, 
       }, 3000);
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : 'Upload failed. Please try again.');
+      onError?.(err instanceof Error ? err.message : 'Upload failed');
     } finally {
       setIsUploading(false);
     }
