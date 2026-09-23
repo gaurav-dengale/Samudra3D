@@ -31,6 +31,11 @@ export const OceanGlobe: React.FC<OceanGlobeProps> = ({
   const markersGroupRef = useRef<THREE.Group | null>(null);
   const particlesGroupRef = useRef<THREE.Points | null>(null);
 
+  const floatsRef = useRef(floats);
+  floatsRef.current = floats;
+  const onSelectFloatRef = useRef(onSelectFloat);
+  onSelectFloatRef.current = onSelectFloat;
+
 
   // Standard equirectangular spherical coordinate projection for Three.js SphereGeometry:
   // In Three.js SphereGeometry:
@@ -395,12 +400,24 @@ export const OceanGlobe: React.FC<OceanGlobeProps> = ({
 
 
 
-    // 12. Mouse Drag & Orbit Controls
+    // 12. Mouse & Touch Drag, Pinch-to-Zoom & Orbit Controls with Momentum
     let isDragging = false;
     let prevMouse = { x: 0, y: 0 };
+    let velX = 0;
+    let velY = 0;
+
+    // Touch variables
+    let touchStartPos = { x: 0, y: 0 };
+    let lastTouchPos = { x: 0, y: 0 };
+    let initialPinchDist = 0;
+    let isTouching = false;
+    let touchStartTime = 0;
+    let hasMovedSignificantly = false;
 
     const handleMouseDown = (e: MouseEvent) => {
       isDragging = true;
+      velX = 0;
+      velY = 0;
       prevMouse = { x: e.clientX, y: e.clientY };
     };
 
@@ -409,8 +426,11 @@ export const OceanGlobe: React.FC<OceanGlobeProps> = ({
       const deltaX = e.clientX - prevMouse.x;
       const deltaY = e.clientY - prevMouse.y;
 
-      globeGroup.rotation.y += deltaX * 0.005;
-      globeGroup.rotation.x += deltaY * 0.005;
+      velX = deltaX * 0.004;
+      velY = deltaY * 0.004;
+
+      globeGroup.rotation.y += velX;
+      globeGroup.rotation.x += velY;
       globeGroup.rotation.x = Math.max(-1.1, Math.min(1.1, globeGroup.rotation.x));
 
       prevMouse = { x: e.clientX, y: e.clientY };
@@ -429,10 +449,10 @@ export const OceanGlobe: React.FC<OceanGlobeProps> = ({
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
 
-    const handleClick = (e: MouseEvent) => {
+    const checkMarkerHit = (clientX: number, clientY: number) => {
       const rect = container.getBoundingClientRect();
-      mouse.x = ((e.clientX - rect.left) / container.clientWidth) * 2 - 1;
-      mouse.y = -((e.clientY - rect.top) / container.clientHeight) * 2 + 1;
+      mouse.x = ((clientX - rect.left) / container.clientWidth) * 2 - 1;
+      mouse.y = -((clientY - rect.top) / container.clientHeight) * 2 + 1;
 
       raycaster.setFromCamera(mouse, camera);
       const intersects = raycaster.intersectObjects(markersGroup.children, true);
@@ -443,17 +463,85 @@ export const OceanGlobe: React.FC<OceanGlobeProps> = ({
           obj = obj.parent;
         }
         if (obj?.userData?.floatId) {
-          const matched = floats.find((f) => f.id === obj?.userData?.floatId);
-          if (matched) onSelectFloat(matched);
+          const matched = floatsRef.current.find((f) => f.id === obj?.userData?.floatId);
+          if (matched) onSelectFloatRef.current(matched);
         }
       }
     };
 
+    const handleClick = (e: MouseEvent) => {
+      checkMarkerHit(e.clientX, e.clientY);
+    };
+
+    const getTouchDist = (t1: Touch, t2: Touch) => {
+      const dx = t1.clientX - t2.clientX;
+      const dy = t1.clientY - t2.clientY;
+      return Math.sqrt(dx * dx + dy * dy);
+    };
+
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length === 1) {
+        isTouching = true;
+        hasMovedSignificantly = false;
+        velX = 0;
+        velY = 0;
+        touchStartTime = Date.now();
+        touchStartPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+        lastTouchPos = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+      } else if (e.touches.length === 2) {
+        isTouching = false;
+        initialPinchDist = getTouchDist(e.touches[0], e.touches[1]);
+      }
+    };
+
+    const handleTouchMove = (e: TouchEvent) => {
+      if (e.touches.length === 1 && isTouching) {
+        const touch = e.touches[0];
+        const deltaX = touch.clientX - lastTouchPos.x;
+        const deltaY = touch.clientY - lastTouchPos.y;
+
+        if (Math.abs(touch.clientX - touchStartPos.x) > 5 || Math.abs(touch.clientY - touchStartPos.y) > 5) {
+          hasMovedSignificantly = true;
+        }
+
+        velX = deltaX * 0.005;
+        velY = deltaY * 0.005;
+
+        globeGroup.rotation.y += velX;
+        globeGroup.rotation.x += velY;
+        globeGroup.rotation.x = Math.max(-1.1, Math.min(1.1, globeGroup.rotation.x));
+
+        lastTouchPos = { x: touch.clientX, y: touch.clientY };
+        if (e.cancelable) e.preventDefault();
+      } else if (e.touches.length === 2) {
+        const currentDist = getTouchDist(e.touches[0], e.touches[1]);
+        const pinchDelta = currentDist - initialPinchDist;
+        camera.position.z -= pinchDelta * 0.04;
+        camera.position.z = Math.max(11, Math.min(38, camera.position.z));
+        initialPinchDist = currentDist;
+        if (e.cancelable) e.preventDefault();
+      }
+    };
+
+    const handleTouchEnd = () => {
+      if (isTouching && !hasMovedSignificantly && Date.now() - touchStartTime < 350) {
+        checkMarkerHit(touchStartPos.x, touchStartPos.y);
+      }
+      isTouching = false;
+    };
+
+    // Attach mouse event listeners
     container.addEventListener('mousedown', handleMouseDown);
     window.addEventListener('mousemove', handleMouseMove);
     window.addEventListener('mouseup', handleMouseUp);
     container.addEventListener('wheel', handleWheel, { passive: false });
     container.addEventListener('click', handleClick);
+
+    // Attach touch event listeners for mobile / touchscreen devices
+    container.addEventListener('touchstart', handleTouchStart, { passive: false });
+    window.addEventListener('touchmove', handleTouchMove, { passive: false });
+    window.addEventListener('touchend', handleTouchEnd);
+    window.addEventListener('touchcancel', handleTouchEnd);
 
     // 13. Animation Loop
     let animationFrameId: number;
@@ -463,8 +551,14 @@ export const OceanGlobe: React.FC<OceanGlobeProps> = ({
       animationFrameId = requestAnimationFrame(animate);
       const elapsedTime = clock.getElapsedTime();
 
-      // Keep focus steady on Indian Ocean basin so user can clearly analyze layers
-
+      // Apply smooth momentum deceleration when user releases touch or mouse drag
+      if (!isDragging && !isTouching && (Math.abs(velX) > 0.0001 || Math.abs(velY) > 0.0001)) {
+        globeGroup.rotation.y += velX;
+        globeGroup.rotation.x += velY;
+        globeGroup.rotation.x = Math.max(-1.1, Math.min(1.1, globeGroup.rotation.x));
+        velX *= 0.92;
+        velY *= 0.92;
+      }
 
       // Animate current particle drift
       if (showCurrentVectors && particleSystem) {
@@ -519,6 +613,12 @@ export const OceanGlobe: React.FC<OceanGlobeProps> = ({
       window.removeEventListener('mouseup', handleMouseUp);
       container.removeEventListener('wheel', handleWheel);
       container.removeEventListener('click', handleClick);
+
+      container.removeEventListener('touchstart', handleTouchStart);
+      window.removeEventListener('touchmove', handleTouchMove);
+      window.removeEventListener('touchend', handleTouchEnd);
+      window.removeEventListener('touchcancel', handleTouchEnd);
+
       window.removeEventListener('resize', handleResize);
       renderer.dispose();
       if (container.contains(renderer.domElement)) {
@@ -587,8 +687,8 @@ export const OceanGlobe: React.FC<OceanGlobeProps> = ({
   }, [floats, selectedFloat, verticalExaggeration]);
 
   return (
-    <div className="relative w-full h-full select-none cursor-grab active:cursor-grabbing">
-      <div ref={mountRef} className="w-full h-full" />
+    <div className="relative w-full h-full select-none touch-none cursor-grab active:cursor-grabbing">
+      <div ref={mountRef} className="w-full h-full touch-none" />
 
       {/* Floating 3D Water Column Depth HUD */}
       <div className="absolute top-4 left-4 pointer-events-none flex flex-col gap-2">
