@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Wifi, WifiOff, Loader } from 'lucide-react';
 
-const API_BASE = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000';
+const API_BASE = (import.meta.env.VITE_API_BASE_URL || '').replace(/\/$/, '');
 
 type Status = 'checking' | 'online' | 'waking' | 'offline';
 
