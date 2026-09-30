@@ -54,10 +54,10 @@ export const WakeUpOverlay: React.FC<WakeUpOverlayProps> = ({ isVisible }) => {
           ))}
         </div>
 
-        <p className="text-amber-400 text-xs font-medium mono animate-pulse">
-          ⏳ Waking backend server — first load may take ~30 seconds
+        <p className="text-sky-400 text-xs font-medium mono animate-pulse">
+          Connecting to Ocean Intelligence Backend...
         </p>
-        <p className="text-slate-500 text-[11px]">Render free-tier cold start</p>
+        <p className="text-slate-500 text-[11px]">Syncing in-situ Argo profiles & 3D model grid</p>
       </div>
     </div>
   );
