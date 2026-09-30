@@ -44,6 +44,13 @@ export const BackendStatus: React.FC<BackendStatusProps> = ({ onWaking }) => {
     };
 
     check();
+
+    // Keep-alive heartbeat: ping every 8 minutes while user has the tab open
+    const keepAliveInterval = setInterval(() => {
+      fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(10000) }).catch(() => {});
+    }, 8 * 60 * 1000);
+
+    return () => clearInterval(keepAliveInterval);
   }, []);
 
   const configs = {
