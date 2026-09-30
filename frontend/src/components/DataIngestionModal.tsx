@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { UploadCloud, CheckCircle2, FileText, Database, AlertCircle } from 'lucide-react';
-import { ingestNetCDF } from '../services/api';
+import { ingestNetCDF, syncErddapFloats } from '../services/api';
 
 
 interface DataIngestionModalProps {
@@ -42,17 +42,23 @@ export const DataIngestionModal: React.FC<DataIngestionModalProps> = ({ isOpen, 
     }
   };
 
-  const handleSimulatedIngest = () => {
-    // For Argo/ASCII tabs (no file upload), simulate the process
+  const handleLiveArgoSync = async () => {
     setIsUploading(true);
-    setTimeout(() => {
-      setIsUploading(false);
+    setUploadError(null);
+    try {
+      const res = await syncErddapFloats();
       setUploadSuccess(true);
+      onSuccess?.(res.message);
       setTimeout(() => {
         setUploadSuccess(false);
         onClose();
-      }, 1500);
-    }, 1200);
+      }, 2500);
+    } catch (err) {
+      setUploadError(err instanceof Error ? err.message : 'ERDDAP sync failed');
+      onError?.('Live sync failed');
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const handleDrop = (e: React.DragEvent) => {
@@ -124,7 +130,7 @@ export const DataIngestionModal: React.FC<DataIngestionModalProps> = ({ isOpen, 
             className="border-2 border-dashed border-slate-700 hover:border-sky-500/60 rounded-xl p-6 flex flex-col items-center justify-center text-center transition cursor-pointer bg-slate-950/40"
             onDragOver={(e) => e.preventDefault()}
             onDrop={activeTab === 'netcdf' ? handleDrop : undefined}
-            onClick={() => activeTab === 'netcdf' ? fileInputRef.current?.click() : handleSimulatedIngest()}
+            onClick={() => activeTab === 'netcdf' ? fileInputRef.current?.click() : handleLiveArgoSync()}
           >
             <input
               ref={fileInputRef}
@@ -141,26 +147,34 @@ export const DataIngestionModal: React.FC<DataIngestionModalProps> = ({ isOpen, 
               <UploadCloud className="w-10 h-10 text-sky-400 mb-2" />
             )}
             <div className="text-sm font-semibold text-white">
-              {uploadSuccess ? 'Ingestion Successful!' : uploadError ? 'Upload Failed' : 'Drag & Drop INCOIS Model / Sensor Dataset'}
+              {uploadSuccess
+                ? 'Ingestion & Synchronization Successful!'
+                : uploadError
+                ? 'Sync Failed'
+                : activeTab === 'argo'
+                ? 'Connect Live Argo GDAC & INCOIS ERDDAP'
+                : 'Drag & Drop INCOIS Model / Sensor Dataset'}
             </div>
             <div className="text-xs text-slate-400 mt-1">
               {uploadSuccess && uploadResult
                 ? `${uploadResult.filename} (${uploadResult.size_kb} KB) • Variables: ${uploadResult.variables_extracted.join(', ')}`
                 : uploadError
                 ? uploadError
+                : activeTab === 'argo'
+                ? 'Syncs live WMO floats across Arabian Sea, Bay of Bengal & Equatorial IO'
                 : 'Supports .nc, .nc4, .grib2, .csv, and .ascii up to 2.5 GB'}
             </div>
             {!uploadSuccess && (
               <button
-                onClick={(e) => { e.stopPropagation(); activeTab === 'netcdf' ? fileInputRef.current?.click() : handleSimulatedIngest(); }}
+                onClick={(e) => { e.stopPropagation(); activeTab === 'netcdf' ? fileInputRef.current?.click() : handleLiveArgoSync(); }}
                 disabled={isUploading}
                 className="mt-4 px-4 py-2 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-bold text-xs transition disabled:opacity-50"
               >
                 {isUploading
-                  ? 'Uploading & Parsing CF Metadata...'
+                  ? 'Connecting to ERDDAP & Fetching Live Platforms...'
                   : activeTab === 'netcdf'
                   ? 'Select File & Parse Grids'
-                  : 'Connect Data Feed'}
+                  : 'Sync Live ERDDAP Feed'}
               </button>
             )}
           </div>

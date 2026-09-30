@@ -59,6 +59,29 @@ export async function fetchFloats(): Promise<FloatsResponse> {
   return res.json();
 }
 
+/** Trigger real-time sync with Argo GDAC & INCOIS ERDDAP */
+export async function syncErddapFloats(): Promise<{
+  status: string;
+  message: string;
+  count: number;
+  timestamp: string;
+}> {
+  const res = await fetch(`${API_BASE}/api/floats/sync`, { method: 'POST' });
+  if (!res.ok) throw new Error(`Failed to sync ERDDAP: ${res.status}`);
+  return res.json();
+}
+
+/** Get ERDDAP live sync metadata */
+export async function fetchLiveStatus(): Promise<{
+  source: string;
+  last_sync: string;
+  count: number;
+}> {
+  const res = await fetch(`${API_BASE}/api/floats/live-status`);
+  if (!res.ok) throw new Error(`Failed to fetch live status: ${res.status}`);
+  return res.json();
+}
+
 /** Fetch a specific float by ID */
 export async function fetchFloatById(id: string): Promise<ArgoFloatAPI> {
   const res = await fetch(`${API_BASE}/api/floats/${id}`);
